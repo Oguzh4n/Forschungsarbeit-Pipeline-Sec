@@ -155,10 +155,12 @@ jobs:
       - name: Run TruffleHog (secret scanning)
         uses: trufflesecurity/trufflehog@363923b901c911a9164f50b6c423f47c15372b1c  # v3.97.4
         with:
-          # Scan only the commits introduced by this PR rather than the full
-          # history, to keep the step fast. On push to main, scan the diff
-          # between the previous HEAD and the new HEAD.
+          # Scan the diff introduced by this event rather than the full history.
+          # For pull_request events, compare the PR base SHA to the PR head SHA.
+          # For push events, compare the commit before the push to the new HEAD.
+          # Using event-specific SHAs avoids the "base == HEAD" error that occurs
+          # when the default branch name is used on a push-to-main event.
           path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
-          extra_args: --debug --only-verified
+          base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          head: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          extra_args: --only-verified
