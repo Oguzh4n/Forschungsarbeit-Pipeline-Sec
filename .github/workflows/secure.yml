@@ -154,6 +154,11 @@ jobs:
       # that file as an allowlisted false positive, or remove the demo file
       # entirely.
       - name: Run TruffleHog (secret scanning)
+        # if: always() ensures TruffleHog runs even when a previous step (e.g.
+        # zizmor) has already failed. This guarantees that both scanners report
+        # their findings in the same run, giving reviewers a complete picture
+        # of all security issues in the PR rather than stopping at the first one.
+        if: always()
         uses: trufflesecurity/trufflehog@363923b901c911a9164f50b6c423f47c15372b1c  # v3.97.4
         with:
           # Scan the diff introduced by this event rather than the full history.
