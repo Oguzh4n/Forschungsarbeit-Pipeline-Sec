@@ -1,0 +1,145 @@
+# =============================================================================
+# HARDENED CI/CD WORKFLOW
+#
+# This workflow performs the same build-and-test task as insecure.yml but
+# applies defensive measures for each vulnerability class. Each control is
+# annotated with a comment explaining what it does and which risk it mitigates.
+# =============================================================================
+
+name: Secure CI (Hardened Reference)
+
+# CONTROL 1: Trigger separation – use `pull_request` instead of
+# `pull_request_target` for build and test steps.
+#
+# Risk mitigated: Poisoned Pipeline Execution (PPE).
+#
+# `pull_request` runs in a restricted context: it has NO access to repository
+# secrets and has only read-level permissions on the repository contents. This
+# means that even if a malicious PR modifies build scripts, it cannot access
+# deployment credentials or tokens. Tasks that genuinely need secrets (e.g.
+# deployment, publishing) should be handled in a *separate* workflow triggered
+# only after a human code review has approved the changes and they have been
+# merged into a protected branch.
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "main" ]
+
+# CONTROL 2: Restrictive top-level permissions block.
+#
+# Risk mitigated: Overly permissive GITHUB_TOKEN.
+#
+# Declaring `permissions` at the workflow level sets a deny-by-default policy.
+# Every job inherits these minimal permissions unless it explicitly overrides
+# them. `contents: read` is the minimum required to check out source code.
+# No write permissions are granted at this level, which limits the blast radius
+# if any step is compromised.
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # CONTROL 3: Action pinned to a full commit SHA instead of a mutable tag.
+      #
+      # Risk mitigated: Supply-chain compromise via tag hijacking.
+      #
+      # Tags like `v4` are mutable pointers that can be silently redirected to
+      # any commit by the action's maintainer or an attacker who gains write
+      # access to the action repository. A full 40-character commit SHA is
+      # immutable: it cryptographically identifies exactly one tree of code.
+      # If the SHA changes in a future update of the action, the workflow will
+      # fail visibly rather than silently running unknown code. The human-
+      # readable version is recorded in the trailing comment for auditability.
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      # CONTROL 3 (continued): setup-java also pinned to commit SHA.
+      # CONTROL 4: Dependency caching enabled to reduce network exposure and
+      # build times. Temurin (Eclipse Adoptium) is the recommended open-source
+      # JDK distribution.
+      #
+      # Risk mitigated: Supply-chain via mutable action tag; also reduces the
+      # number of external network calls during the build, which lowers the
+      # attack surface for dependency-confusion and MitM attacks on the Maven
+      # repository connection.
+      - name: Set up Java 17 (Temurin, with Maven cache)
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a493d4ef91e4967  # v4.7.1
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # CONTROL 5: Externally controlled values passed through environment
+      # variables, not interpolated directly into shell commands.
+      #
+      # Risk mitigated: Script injection.
+      #
+      # GitHub Actions expands `${{ ... }}` expressions *before* the shell
+      # parses the command. An attacker can embed shell metacharacters in
+      # values they control (e.g. a PR title) to break out of the intended
+      # command. By assigning the expression to an environment variable first,
+      # the shell receives the raw bytes of the value through the environment
+      # rather than through command substitution or argument parsing. Shell
+      # metacharacters in the value are therefore inert. Compare with the
+      # script injection sink in insecure.yml.
+      - name: Log PR metadata safely
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          echo "Building PR: ${PR_TITLE}"
+          echo "Submitted by: ${PR_AUTHOR}"
+
+      - name: Build and test with Maven
+        run: mvn -B verify --no-transfer-progress
+
+      # CONTROL 6: Static analysis of workflow files with zizmor.
+      #
+      # Risk mitigated: Misconfigured or vulnerable workflow patterns that
+      # evade code review.
+      #
+      # zizmor (https://github.com/woodruffw/zizmor) is a static analyser
+      # dedicated to GitHub Actions security. It detects issues such as script
+      # injection sinks, dangerous trigger combinations (pull_request_target
+      # with checkout), missing permission scopes, and unpinned actions. Running
+      # it as a CI step means every PR is audited automatically, not just when
+      # a security reviewer happens to look at the workflow diff. The action is
+      # pinned to a commit SHA for the same reason as the other actions above.
+      - name: Run zizmor (workflow static analysis)
+        uses: woodruffw/zizmor-action@b83456203b9b8a0b1e832620c4782b28a66bb3c4  # v1.5.0
+        with:
+          # Analyse all workflow files in the repository. zizmor exits non-zero
+          # if it finds any issues with severity >= "medium", causing the job
+          # to fail. Adjust the minimum severity via --min-severity if needed.
+          args: .github/workflows/
+
+      # CONTROL 7: Secret scanning with TruffleHog.
+      #
+      # Risk mitigated: Accidental or intentional credential exposure in the
+      # repository history or working tree.
+      #
+      # TruffleHog scans commits for high-entropy strings and known secret
+      # patterns (AWS keys, GitHub tokens, etc.). Running it on every PR
+      # prevents developers from accidentally committing credentials and
+      # provides a continuous audit trail. The action is pinned to a SHA.
+      #
+      # Note: The file demo/fake-secrets-for-trufflehog-demo.txt in this
+      # repository contains a clearly fake, non-functional credential
+      # (AKIAIOSFODNN7EXAMPLE) to demonstrate that TruffleHog detects the
+      # pattern. In a real repository you would configure TruffleHog to treat
+      # that file as an allowlisted false positive, or remove the demo file
+      # entirely.
+      - name: Run TruffleHog (secret scanning)
+        uses: trufflesecurity/trufflehog@f03a29a72c8a1de0e9c6c76e24bf2ebb3c2d7a57  # v3.82.6
+        with:
+          # Scan only the commits introduced by this PR rather than the full
+          # history, to keep the step fast. On push to main, scan the diff
+          # between the previous HEAD and the new HEAD.
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
