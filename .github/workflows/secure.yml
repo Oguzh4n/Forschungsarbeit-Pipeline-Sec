@@ -69,6 +69,12 @@ jobs:
           # config immediately after checkout. The Maven build does not perform
           # any authenticated git operations, so no functionality is lost.
           persist-credentials: false
+          # fetch-depth: 0 fetches the full commit history rather than a
+          # shallow clone of depth 1. This is required by TruffleHog: to diff
+          # between the PR base SHA and the PR head SHA it must be able to
+          # resolve both commits locally. Without full history, TruffleHog
+          # exits with "unable to resolve commit: object not found".
+          fetch-depth: 0
 
       # CONTROL 3 (continued): setup-java also pinned to commit SHA.
       # CONTROL 4: Dependency caching enabled to reduce network exposure and
