@@ -112,10 +112,16 @@ jobs:
       - name: Run zizmor (workflow static analysis)
         uses: zizmorcore/zizmor-action@70fb788f84895a7701f5643d103d587e460b5c99  # v0.6.3
         with:
-          # Analyse all workflow files in the repository. zizmor exits non-zero
-          # if it finds any issues with severity >= "medium", causing the job
-          # to fail. Adjust the minimum severity via --min-severity if needed.
-          args: .github/workflows/
+          # Scan only this (hardened) workflow to verify it passes cleanly.
+          # insecure.yml is an intentional anti-example — zizmor would correctly
+          # flag every flaw documented there. In a real repository you would scan
+          # all workflows and fix any finding; the anti-example is excluded here
+          # solely to keep the CI green for demonstration purposes.
+          inputs: .github/workflows/secure.yml
+          # advanced-security uploads SARIF results to the GitHub Security tab,
+          # which requires GitHub Advanced Security (GHAS). Disabled here so the
+          # workflow runs on repositories without GHAS enabled.
+          advanced-security: false
 
       # CONTROL 7: Secret scanning with TruffleHog.
       #
