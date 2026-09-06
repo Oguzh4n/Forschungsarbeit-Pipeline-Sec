@@ -125,12 +125,13 @@ jobs:
       - name: Run zizmor (workflow static analysis)
         uses: zizmorcore/zizmor-action@70fb788f84895a7701f5643d103d587e460b5c99  # v0.6.3
         with:
-          # Scan only this (hardened) workflow to verify it passes cleanly.
-          # insecure.yml is an intentional anti-example — zizmor would correctly
-          # flag every flaw documented there. In a real repository you would scan
-          # all workflows and fix any finding; the anti-example is excluded here
-          # solely to keep the CI green for demonstration purposes.
-          inputs: .github/workflows/secure.yml
+          # Scan all workflow files in the repository. insecure.yml is suppressed
+          # via .zizmor.yml because its findings are intentional and documented.
+          # Every other workflow — including any file introduced by a PR — is
+          # scanned at full severity. This means a PR that adds a vulnerable
+          # workflow will automatically fail this step before it can be merged.
+          inputs: .github/workflows/
+          config: .zizmor.yml
           # advanced-security uploads SARIF results to the GitHub Security tab,
           # which requires GitHub Advanced Security (GHAS). Disabled here so the
           # workflow runs on repositories without GHAS enabled.
@@ -163,4 +164,10 @@ jobs:
           path: ./
           base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           head: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          extra_args: --only-verified
+          # --only-verified is intentionally omitted. Without it, TruffleHog
+          # reports all pattern matches — verified and unverified — and exits
+          # non-zero if any are found. This catches accidentally committed
+          # credentials even when TruffleHog cannot confirm they are still
+          # active (e.g. a key that has already been rotated). The trade-off
+          # is a higher false-positive rate; teams should allowlist known
+          # false positives rather than re-enabling --only-verified.

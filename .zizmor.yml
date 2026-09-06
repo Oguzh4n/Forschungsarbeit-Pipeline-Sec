@@ -1,0 +1,30 @@
+# zizmor configuration
+#
+# This file suppresses zizmor findings for insecure.yml. That workflow is an
+# intentional anti-example for research purposes — its flaws are documented
+# in the file itself. Suppressing them here prevents the CI from failing on
+# known-intentional findings while still catching real issues in every other
+# workflow file.
+#
+# Each rule that fires on insecure.yml is listed explicitly so that the
+# suppression is auditable and scoped to that file only.
+
+rules:
+  dangerous-triggers:
+    ignore:
+      - insecure.yml
+  template-injection:
+    ignore:
+      - insecure.yml
+  unpinned-uses:
+    ignore:
+      - insecure.yml
+  excessive-permissions:
+    ignore:
+      - insecure.yml
+  artipacked:
+    ignore:
+      - insecure.yml
+  ref-confusion:
+    ignore:
+      - insecure.yml
