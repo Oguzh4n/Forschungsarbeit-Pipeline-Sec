@@ -67,7 +67,7 @@ jobs:
       # attack surface for dependency-confusion and MitM attacks on the Maven
       # repository connection.
       - name: Set up Java 17 (Temurin, with Maven cache)
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a493d4ef91e4967  # v4.7.1
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00  # v4.7.1
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -102,7 +102,7 @@ jobs:
       # Risk mitigated: Misconfigured or vulnerable workflow patterns that
       # evade code review.
       #
-      # zizmor (https://github.com/woodruffw/zizmor) is a static analyser
+      # zizmor (https://github.com/zizmorcore/zizmor) is a static analyser
       # dedicated to GitHub Actions security. It detects issues such as script
       # injection sinks, dangerous trigger combinations (pull_request_target
       # with checkout), missing permission scopes, and unpinned actions. Running
@@ -110,7 +110,7 @@ jobs:
       # a security reviewer happens to look at the workflow diff. The action is
       # pinned to a commit SHA for the same reason as the other actions above.
       - name: Run zizmor (workflow static analysis)
-        uses: woodruffw/zizmor-action@b83456203b9b8a0b1e832620c4782b28a66bb3c4  # v1.5.0
+        uses: zizmorcore/zizmor-action@70fb788f84895a7701f5643d103d587e460b5c99  # v0.6.3
         with:
           # Analyse all workflow files in the repository. zizmor exits non-zero
           # if it finds any issues with severity >= "medium", causing the job
@@ -134,7 +134,7 @@ jobs:
       # that file as an allowlisted false positive, or remove the demo file
       # entirely.
       - name: Run TruffleHog (secret scanning)
-        uses: trufflesecurity/trufflehog@f03a29a72c8a1de0e9c6c76e24bf2ebb3c2d7a57  # v3.82.6
+        uses: trufflesecurity/trufflehog@363923b901c911a9164f50b6c423f47c15372b1c  # v3.97.4
         with:
           # Scan only the commits introduced by this PR rather than the full
           # history, to keep the step fast. On push to main, scan the diff
